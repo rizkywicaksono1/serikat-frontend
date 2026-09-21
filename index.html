@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Informasi Serikat Pekerja</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for in-browser JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        union: {
+                            50: '#f0f5fa',
+                            100: '#e1ebf4',
+                            500: '#3b82f6',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback } = React;
+
+        // --- MOCK USERS ---
+        const MOCK_USERS = [
+            { id: 'admin', password: 'admin', name: 'Budi Santoso', role: 'admin', department: 'Pengurus Inti', position: 'Ketua', phone: '081234567890', email: 'budi@serikat.org', status: 'aktif' },
+            { id: 'user', password: 'user', name: 'Rizky Pratama', role: 'user', department: 'Produksi', position: 'Anggota', phone: '089876543210', email: 'rizky@serikat.org', status: 'aktif' },
+            { id: 'SP-003', password: 'user', name: 'Siti Aminah', role: 'user', department: 'Logistik', position: 'Anggota', phone: '081122334455', email: 'siti@serikat.org', status: 'aktif' }
+        ];
+
+        // INITIAL FINANCES NOW EMPTY AS REQUESTED
+        const INITIAL_FINANCES = [];
+
+        const MOCK_AGENDA = [
+            { id: 1, title: 'Rapat Rutin Pengurus', date: '2026-09-25', time: '13:00 - 15:00', location: 'Ruang Serbaguna', status: 'Akan Datang' },
+            { id: 2, title: 'Sosialisasi PKB Baru', date: '2026-09-28', time: '09:00 - 12:00', location: 'Aula Utama', status: 'Akan Datang' }
+        ];
+
+        // --- UTILS ---
+        const formatRupiah = (angka) => {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka || 0);
+        };
+        const formatShortRupiah = (angka) => {
+            if (angka >= 1000000000) return (angka / 1000000000).toFixed(1) + ' M';
+            if (angka >= 1000000) return (angka / 1000000).toFixed(1) + ' Jt';
+            if (angka >= 1000) return (angka / 1000).toFixed(0) + ' Rb';
+            return angka || '0';
+        };
+        const formatDate = (dateString) => {
+            if (!dateString) return '-';
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            const d = new Date(dateString);
+            return isNaN(d.getTime()) ? dateString : d.toLocaleDateString('id-ID', options);
+        };
+
+        // Parse CSV text into array of finance items
+        const parseCSVToFinances = (csvText) => {
+            const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+            if (lines.length <= 1) return [];
+
+            const parsedData = [];
+            // Auto detect delimiter (, or ;)
+            const delimiter = lines[0].includes(';') ? ';' : ',';
+
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^"|"$/g, ''));
+                if (cols.length >= 5) {
+                    const typeRaw = cols[1].toLowerCase();
+                    const isIncome = typeRaw === 'income' || typeRaw === 'pemasukan' || typeRaw === 'masuk';
+                    parsedData.push({
+                        id: Date.now() + i,
+                        date: cols[0],
+                        type: isIncome ? 'income' : 'expense',
+                        category: cols[2] || 'Umum',
+                        desc: cols[3] || 'Tanpa Keterangan',
+                        amount: Number(cols[4].replace(/[^0-9]/g, '')) || 0,
+                        status: 'Selesai'
+                    });
+                }
+            }
+            return parsedData;
+        };
+
+        // Aggregate monthly totals dynamically for selected year
+        const computeMonthlyData = (financesList, selectedYear) => {
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+            const monthlyStats = months.map(m => ({ month: m, income: 0, expense: 0 }));
+
+            financesList.forEach(item => {
+                const itemDate = new Date(item.date);
+                if (!isNaN(itemDate.getTime()) && itemDate.getFullYear().toString() === selectedYear) {
+                    const monthIdx = itemDate.getMonth();
+                    if (item.type === 'income') {
+                        monthlyStats[monthIdx].income += Number(item.amount);
+                    } else if (item.type === 'expense') {
+                        monthlyStats[monthIdx].expense += Number(item.amount);
+                    }
+                }
+            });
+
+            return monthlyStats;
+        };
+
+        const IconHome = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
+        const IconWallet = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>;
+        const IconCalendar = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
+        const IconUsers = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+        const IconMenu = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>;
+        const IconX = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>;
+        const IconLogOut = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>;
+        const IconBell = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>;
+        const IconTrendingUp = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>;
+        const IconTrendingDown = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>;
+        const IconPlus = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>;
+        const IconFileSpreadsheet = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M10 9v10"/></svg>;
+        const IconDownload = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
+        const IconSearch = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
+        const IconRefresh = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>;
+        const IconLink = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>;
+        const IconTrash = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
+
+        const Card = ({ children, className = '' }) => (
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-5 ${className}`}>
+                {children}
+            </div>
+        );
+
+        const StatusBadge = ({ status }) => {
+            let colors = "bg-gray-100 text-gray-800";
+            if (status === 'Selesai' || status === 'Disetujui' || status === 'aktif') colors = "bg-green-100 text-green-700";
+            if (status === 'Ditolak' || status === 'Dibatalkan' || status === 'nonaktif') colors = "bg-red-100 text-red-700";
+            if (status === 'Diproses' || status === 'Akan Datang' || status === 'Baru') colors = "bg-orange-100 text-orange-700";
+            
+            return (
+                <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${colors}`}>
+                    {status}
+                </span>
+            );
+        };
+
+        const Button = ({ children, onClick, variant = 'primary', className = '', icon, type = 'button', disabled = false }) => {
+            const baseStyle = "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2";
+            const variants = {
+                primary: "bg-union-900 text-white hover:bg-union-800 focus:ring-union-500 shadow-sm",
+                excel: "bg-emerald-700 text-white hover:bg-emerald-800 focus:ring-emerald-500 shadow-sm",
+                secondary: "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-union-500",
+                danger: "bg-rose-600 text-white hover:bg-rose-700 focus:ring-rose-500",
+                ghost: "bg-transparent text-gray-600 hover:bg-gray-100"
+            };
+            
+            return (
+                <button type={type} onClick={onClick} disabled={disabled} className={`${baseStyle} ${variants[variant]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}>
+                    {icon && <span>{icon}</span>}
+                    {children}
+                </button>
+            );
+        };
+
+        const LiveExcelModal = ({ isOpen, onClose, syncUrl, onSaveSyncUrl, onSyncNow, isSyncing }) => {
+            const [urlInput, setUrlInput] = useState(syncUrl || '');
+            const [msg, setMsg] = useState({ text: '', type: '' });
+
+            useEffect(() => {
+                setUrlInput(syncUrl || '');
+            }, [syncUrl, isOpen]);
+
+            if (!isOpen) return null;
+
+            const handleSave = async () => {
+                if (!urlInput.trim()) {
+                    onSaveSyncUrl('');
+                    setMsg({ text: 'Link disetel kosong. Fitur live sync dinonaktifkan.', type: 'info' });
+                    return;
+                }
+                onSaveSyncUrl(urlInput.trim());
+                setMsg({ text: 'Link live sync berhasil disimpan! Menguji koneksi...', type: 'info' });
+                const success = await onSyncNow(urlInput.trim());
+                if (success) {
+                    setMsg({ text: 'Berhasil terhubung & data disinkronkan!', type: 'success' });
+                } else {
+                    setMsg({ text: 'Gagal mengambil data. Pastikan link dipublikasikan sebagai CSV publik.', type: 'error' });
+                }
+            };
+
+            const sampleGoogleUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1v.../pub?output=csv";
+
+            return (
+                <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-6 space-y-5 max-h-[90vh] flex flex-col overflow-y-auto">
+                        <div className="flex justify-between items-center border-b pb-3">
+                            <div className="flex items-center gap-2 text-emerald-800">
+                                <IconLink />
+                                <h3 className="text-lg font-bold">Integrasi Live Excel / Google Sheets (Power BI Style)</h3>
+                            </div>
+                            <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                                <IconX />
+                            </button>
+                        </div>
+
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900 space-y-2">
+                            <p className="font-bold text-sm text-emerald-950 flex items-center gap-1.5">
+                                💡 Cara Kerja Live Sync:
+                            </p>
+                            <p>Sama seperti Power BI, Anda cukup mengedit file spreadsheet online (Google Sheets / OneDrive Excel Web). Aplikasi akan menyedot data terbaru secara otomatis lewat link publik CSV!</p>
+                        </div>
+
+                        {/* Instructions */}
+                        <div className="space-y-3">
+                            <h4 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Langkah Mendapatkan Link Publik CSV:</h4>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                <div className="border rounded-xl p-3.5 bg-gray-50 space-y-1.5">
+                                    <p className="font-bold text-emerald-800">🟢 Google Sheets (Rekomendasi):</p>
+                                    <ol className="list-decimal list-inside space-y-1 text-gray-600">
+                                        <li>Buka Google Sheets data Anda</li>
+                                        <li>Klik menu <b>File</b> → <b>Bagikan (Share)</b> → <b>Publikasikan ke Web</b></li>
+                                        <li>Pilih opsi format <b>Comma-separated values (.csv)</b></li>
+                                        <li>Klik <b>Publikasikan</b> lalu Salin Link-nya</li>
+                                    </ol>
+                                </div>
+                                <div className="border rounded-xl p-3.5 bg-gray-50 space-y-1.5">
+                                    <p className="font-bold text-blue-800">🔵 Microsoft Excel / OneDrive:</p>
+                                    <ol className="list-decimal list-inside space-y-1 text-gray-600">
+                                        <li>Simpan file di OneDrive / SharePoint</li>
+                                        <li>Gunakan opsi <i>Embed</i> atau dapatkan Link Direct Download CSV</li>
+                                        <li>Pastikan izin akses disetel publik/bisa dibaca via URL.</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Format Requirement Note */}
+                        <div className="bg-gray-100 rounded-lg p-3 text-xs font-mono text-gray-700">
+                            <b>Format Kolom Excel (Wajib):</b><br/>
+                            <code>Tanggal , Tipe , Kategori , Keterangan , Nominal</code><br/>
+                            <span className="text-[11px] text-gray-500 font-sans">Contoh isi: 2026-09-21, Pemasukan, Iuran, Iuran Anggota Sept, 15000000</span>
+                        </div>
+
+                        {/* Input Link */}
+                        <div className="space-y-2">
+                            <label className="block text-xs font-bold text-gray-800">URL Publik CSV Google Sheets / Excel:</label>
+                            <input 
+                                type="url" 
+                                placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
+                                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                                value={urlInput}
+                                onChange={e => setUrlInput(e.target.value)}
+                            />
+                        </div>
+
+                        {msg.text && (
+                            <div className={`p-3 rounded-lg text-xs font-medium ${msg.type === 'success' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : msg.type === 'error' ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-blue-100 text-blue-800'}`}>
+                                {msg.text}
+                            </div>
+                        )}
+
+                        <div className="flex justify-between items-center border-t pt-4">
+                            <button 
+                                onClick={() => { setUrlInput(''); onSaveSyncUrl(''); setMsg({ text: 'Link dihapus', type: 'info'}); }}
+                                className="text-xs text-rose-600 hover:text-rose-800 font-medium underline"
+                            >
+                                Hapus Link Sync
+                            </button>
+                            <div className="flex gap-2">
+                                <Button variant="secondary" onClick={onClose}>Tutup</Button>
+                                <Button variant="excel" onClick={handleSave} disabled={isSyncing} icon={<IconRefresh />}>
+                                    {isSyncing ? 'Menghubungkan...' : 'Simpan & Sinkronkan Live'}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ManualAddModal = ({ isOpen, onClose, onAdd }) => {
+            const [formData, setFormData] = useState({
+                date: new Date().toISOString().split('T')[0],
+                type: 'income',
+                category: 'Iuran Anggota',
+                desc: '',
+                amount: ''
+            });
+
+            // Update default category dynamically when transaction type changes
+            const handleTypeChange = (e) => {
+                const newType = e.target.value;
+                setFormData({ 
+                    ...formData, 
+                    type: newType, 
+                    category: newType === 'income' ? 'Iuran Anggota' : 'Operasional & Sekretariat' 
+                });
+            };
+
+            if (!isOpen) return null;
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!formData.amount || !formData.desc) return;
+                onAdd({
+                    id: Date.now(),
+                    date: formData.date,
+                    type: formData.type,
+                    category: formData.category,
+                    desc: formData.desc,
+                    amount: Number(formData.amount),
+                    status: 'Selesai'
+                });
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+                        <div className="flex justify-between items-center border-b pb-3">
+                            <h3 className="text-lg font-bold text-gray-800">Tambah Transaksi Manual</h3>
+                            <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                                <IconX />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block font-bold text-gray-700 mb-1">Tanggal</label>
+                                    <input 
+                                        type="date" 
+                                        required
+                                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-union-500 outline-none"
+                                        value={formData.date}
+                                        onChange={e => setFormData({ ...formData, date: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block font-bold text-gray-700 mb-1">Tipe Transaksi</label>
+                                    <select 
+                                        className="w-full px-3 py-2 border rounded-lg bg-white outline-none"
+                                        value={formData.type}
+                                        onChange={handleTypeChange}
+                                    >
+                                        <option value="income">Pemasukan (+)</option>
+                                        <option value="expense">Pengeluaran (-)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block font-bold text-gray-700 mb-1">Kategori</label>
+                                    <select 
+                                        required
+                                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-union-500 outline-none bg-white"
+                                        value={formData.category}
+                                        onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                    >
+                                        {formData.type === 'income' 
+                                            ? [
+                                                "Iuran Anggota",
+                                                "Sumbangan / Donasi",
+                                                "Hasil Usaha Serikat",
+                                                "Lain-lain"
+                                              ].map(c => <option key={c} value={c}>{c}</option>)
+                                            : [
+                                                "Operasional & Sekretariat",
+                                                "Konsumsi Rapat",
+                                                "Bantuan Hukum / Advokasi",
+                                                "Santunan / Sosial",
+                                                "Transportasi & Perjalanan Dinas"
+                                              ].map(c => <option key={c} value={c}>{c}</option>)
+                                        }
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block font-bold text-gray-700 mb-1">Nominal (Rp)</label>
+                                    <input 
+                                        type="number" 
+                                        required
+                                        placeholder="100000"
+                                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-union-500 outline-none font-bold"
+                                        value={formData.amount}
+                                        onChange={e => setFormData({ ...formData, amount: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block font-bold text-gray-700 mb-1">Keterangan / Deskripsi</label>
+                                <textarea 
+                                    rows="3"
+                                    required
+                                    placeholder={formData.type === 'income' ? "Contoh: Iuran rutin bulan September dari Anggota Unit Logistik" : "Contoh: Beli snack & nasi kotak rapat pleno pengurus tgl 20 Sep"}
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-union-500 outline-none"
+                                    value={formData.desc}
+                                    onChange={e => setFormData({ ...formData, desc: e.target.value })}
+                                />
+                                <p className="text-[10px] text-gray-500 mt-1">Isi dengan spesifik (siapa, apa, untuk acara apa) sesuai panduan.</p>
+                            </div>
+
+                            <div className="flex justify-end gap-2 border-t pt-3">
+                                <Button variant="secondary" onClick={onClose}>Batal</Button>
+                                <Button type="submit">Simpan Transaksi</Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const ExcelImportModal = ({ isOpen, onClose, onImport }) => {
+            const [importedRows, setImportedRows] = useState([]);
+            const [errorMsg, setErrorMsg] = useState('');
+            const [fileName, setFileName] = useState('');
+
+            if (!isOpen) return null;
+
+            const handleDownloadTemplate = () => {
+                const csvHeader = "Tanggal,Tipe,Kategori,Deskripsi,Nominal\n";
+                const csvSample = "2026-09-22,Pemasukan,Iuran,Iuran Anggota September,1500000\n2026-09-23,Pengeluaran,Operasional,Konsumsi Rapat,350000\n";
+                const blob = new Blob([csvHeader + csvSample], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "Template_Keuangan_Serikat.csv";
+                a.click();
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setFileName(file.name);
+
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const parsed = parseCSVToFinances(evt.target.result);
+                    if (parsed.length === 0) {
+                        setErrorMsg('Berkas kosong atau format tidak sesuai.');
+                    } else {
+                        setErrorMsg('');
+                        setImportedRows(parsed);
+                    }
+                };
+                reader.readAsText(file);
+            };
+
+            const handleConfirmImport = () => {
+                if (importedRows.length > 0) {
+                    onImport(importedRows);
+                    setImportedRows([]);
+                    setFileName('');
+                    onClose();
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-6 space-y-5 max-h-[90vh] flex flex-col">
+                        <div className="flex justify-between items-center border-b pb-3">
+                            <div className="flex items-center gap-2 text-emerald-800">
+                                <IconFileSpreadsheet />
+                                <h3 className="text-lg font-bold">Import Data File Excel / CSV Local</h3>
+                            </div>
+                            <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                                <IconX />
+                            </button>
+                        </div>
+
+                        <div className="border-2 border-dashed border-emerald-300 bg-emerald-50/50 rounded-xl p-6 text-center space-y-3">
+                            <div className="mx-auto w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center">
+                                <IconFileSpreadsheet />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-gray-800">Pilih berkas file CSV dari komputer Anda</p>
+                                <p className="text-xs text-gray-500 mt-1">Format kolom: Tanggal, Tipe, Kategori, Deskripsi, Nominal</p>
+                            </div>
+                            <div className="flex flex-wrap justify-center gap-3 pt-2">
+                                <label className="cursor-pointer bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-all">
+                                    Pilih File CSV/Excel
+                                    <input type="file" accept=".csv, .txt" className="hidden" onChange={handleFileUpload} />
+                                </label>
+                                <Button variant="secondary" onClick={handleDownloadTemplate} icon={<IconDownload />} className="text-xs py-2">
+                                    Unduh Template CSV
+                                </Button>
+                            </div>
+                            {fileName && <p className="text-xs font-bold text-emerald-700">File Terpilih: {fileName}</p>}
+                        </div>
+
+                        {errorMsg && (
+                            <div className="bg-rose-50 text-rose-600 p-3 rounded-lg text-xs font-medium border border-rose-200">
+                                {errorMsg}
+                            </div>
+                        )}
+
+                        {importedRows.length > 0 && (
+                            <div className="flex-1 overflow-y-auto border rounded-xl p-3 bg-gray-50 space-y-2">
+                                <p className="text-xs font-bold text-gray-700">Pratinjau ({importedRows.length} baris data ditemukan):</p>
+                                <table className="w-full text-xs text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-200 text-gray-700 border-b">
+                                            <th className="p-2">Tanggal</th>
+                                            <th className="p-2">Tipe</th>
+                                            <th className="p-2">Kategori</th>
+                                            <th className="p-2">Deskripsi</th>
+                                            <th className="p-2 text-right">Nominal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {importedRows.map((r, i) => (
+                                            <tr key={i} className="border-b last:border-0 bg-white">
+                                                <td className="p-2 font-medium">{r.date}</td>
+                                                <td className="p-2">
+                                                    <span className={`px-2 py-0.5 rounded font-bold ${r.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                        {r.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-2">{r.category}</td>
+                                                <td className="p-2 text-gray-600 truncate max-w-[150px]">{r.desc}</td>
+                                                <td className="p-2 text-right font-bold">{formatRupiah(r.amount)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-3 border-t pt-3">
+                            <Button variant="secondary" onClick={onClose}>Batal</Button>
+                            <Button 
+                                variant="excel" 
+                                onClick={handleConfirmImport} 
+                                disabled={importedRows.length === 0}
+                            >
+                                Import ({importedRows.length} Transaksi)
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AddMemberModal = ({ isOpen, onClose, onAddMember }) => {
+            const [formData, setFormData] = useState({
+                id: '',
+                name: '',
+                department: 'Produksi',
+                position: 'Anggota',
+                phone: '',
+                email: '',
+                role: 'user',
+                status: 'aktif'
+            });
+
+            if (!isOpen) return null;
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!formData.id || !formData.name) return;
+                onAddMember({ ...formData, password: 'user' });
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+                        <div className="flex justify-between items-center border-b pb-3">
+                            <h3 className="text-lg font-bold text-gray-800">Tambah Anggota Baru</h3>
+                            <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                                <IconX />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">ID / Nomor Anggota</label>
+                                <input 
+                                    type="text" 
+                                    required
+                                    placeholder="Contoh: SP-2026-005"
+                                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-union-500 outline-none"
+                                    value={formData.id}
+                                    onChange={e => setFormData({ ...formData, id: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">Nama Lengkap</label>
+                                <input 
+                                    type="text" 
+                                    required
+                                    placeholder="Nama lengkap anggota"
+                                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-union-500 outline-none"
+                                    value={formData.name}
+                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Departemen</label>
+                                    <select 
+                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-union-500 outline-none bg-white"
+                                        value={formData.department}
+                                        onChange={e => setFormData({ ...formData, department: e.target.value })}
+                                    >
+                                        <option value="Produksi">Produksi</option>
+                                        <option value="Logistik">Logistik</option>
+                                        <option value="Quality Control">Quality Control</option>
+                                        <option value="Pengurus Inti">Pengurus Inti</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Jabatan Serikat</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Contoh: Anggota, Bendahara"
+                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-union-500 outline-none"
+                                        value={formData.position}
+                                        onChange={e => setFormData({ ...formData, position: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-3 border-t">
+                                <Button variant="secondary" onClick={onClose}>Batal</Button>
+                                <Button type="submit">Simpan Anggota</Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const FinancialLineChart = ({ data, selectedYear, onYearChange }) => {
+            const [hoveredIndex, setHoveredIndex] = useState(null);
+
+            const width = 650;
+            const height = 260;
+            const padding = { top: 25, right: 30, bottom: 40, left: 55 };
+
+            const innerWidth = width - padding.left - padding.right;
+            const innerHeight = height - padding.top - padding.bottom;
+
+            const maxVal = useMemo(() => {
+                const maxIn = Math.max(...data.map(d => d.income), 0);
+                const maxOut = Math.max(...data.map(d => d.expense), 0);
+                const peak = Math.max(maxIn, maxOut);
+                return peak === 0 ? 10000000 : Math.ceil((peak * 1.15) / 1000000) * 1000000;
+            }, [data]);
+
+            const getX = (index) => padding.left + (index * (innerWidth / (data.length - 1 || 1)));
+            const getY = (val) => padding.top + innerHeight - ((val / maxVal) * innerHeight);
+
+            const incomePoints = data.map((d, i) => `${getX(i)},${getY(d.income)}`).join(' ');
+            const expensePoints = data.map((d, i) => `${getX(i)},${getY(d.expense)}`).join(' ');
+
+            return (
+                <Card className="w-full">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800">Visualisasi Grafik Tren Transaksi</h3>
+                            <p className="text-xs text-gray-500">Perbandingan real-time Pemasukan vs Pengeluaran ({selectedYear})</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 flex-wrap">
+                            <div className="flex items-center gap-3 text-xs font-medium">
+                                <span className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
+                                    Pemasukan
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-full bg-rose-500 inline-block"></span>
+                                    Pengeluaran
+                                </span>
+                            </div>
+
+                            <select 
+                                value={selectedYear}
+                                onChange={(e) => onYearChange(e.target.value)}
+                                className="bg-gray-50 border border-gray-300 text-gray-700 text-xs font-semibold rounded-lg focus:ring-union-500 focus:border-union-500 px-3 py-1.5 outline-none shadow-sm cursor-pointer"
+                            >
+                                <option value="2026">Tahun 2026</option>
+                                <option value="2025">Tahun 2025</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="relative w-full overflow-x-auto hide-scroll">
+                        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto min-w-[550px] overflow-visible">
+                            {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
+                                const yVal = maxVal * (1 - ratio);
+                                const yPos = padding.top + (innerHeight * ratio);
+                                return (
+                                    <g key={idx}>
+                                        <line 
+                                            x1={padding.left} 
+                                            y1={yPos} 
+                                            x2={width - padding.right} 
+                                            y2={yPos} 
+                                            stroke="#f1f5f9" 
+                                            strokeDasharray={idx === 4 ? "0" : "4 4"} 
+                                            strokeWidth="1.5"
+                                        />
+                                        <text 
+                                            x={padding.left - 10} 
+                                            y={yPos + 4} 
+                                            textAnchor="end" 
+                                            className="text-[10px] fill-gray-400 font-medium"
+                                        >
+                                            {formatShortRupiah(yVal)}
+                                        </text>
+                                    </g>
+                                );
+                            })}
+
+                            <polygon
+                                points={`${getX(0)},${padding.top + innerHeight} ${incomePoints} ${getX(data.length - 1)},${padding.top + innerHeight}`}
+                                fill="rgba(16, 185, 129, 0.08)"
+                            />
+
+                            <polygon
+                                points={`${getX(0)},${padding.top + innerHeight} ${expensePoints} ${getX(data.length - 1)},${padding.top + innerHeight}`}
+                                fill="rgba(244, 63, 94, 0.05)"
+                            />
+
+                            <polyline
+                                fill="none"
+                                stroke="#10b981"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                points={incomePoints}
+                            />
+
+                            <polyline
+                                fill="none"
+                                stroke="#f43f5e"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                points={expensePoints}
+                            />
+
+                            {data.map((d, i) => {
+                                const x = getX(i);
+                                const yIn = getY(d.income);
+                                const yOut = getY(d.expense);
+                                const isHovered = hoveredIndex === i;
+
+                                return (
+                                    <g key={i} className="cursor-pointer" onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)}>
+                                        {isHovered && (
+                                            <line 
+                                                x1={x} 
+                                                y1={padding.top} 
+                                                x2={x} 
+                                                y2={padding.top + innerHeight} 
+                                                stroke="#cbd5e1" 
+                                                strokeWidth="1" 
+                                                strokeDasharray="3 3"
+                                            />
+                                        )}
+
+                                        <text 
+                                            x={x} 
+                                            y={height - 12} 
+                                            textAnchor="middle" 
+                                            className={`text-[11px] font-medium transition-colors ${isHovered ? 'fill-union-900 font-bold' : 'fill-gray-500'}`}
+                                        >
+                                            {d.month}
+                                        </text>
+
+                                        <circle 
+                                            cx={x} 
+                                            cy={yIn} 
+                                            r={isHovered ? "6" : "4"} 
+                                            className="fill-emerald-500 stroke-white stroke-2 transition-all duration-150" 
+                                        />
+
+                                        <circle 
+                                            cx={x} 
+                                            cy={yOut} 
+                                            r={isHovered ? "6" : "4"} 
+                                            className="fill-rose-500 stroke-white stroke-2 transition-all duration-150" 
+                                        />
+                                    </g>
+                                );
+                            })}
+                        </svg>
+
+                        {hoveredIndex !== null && data[hoveredIndex] && (
+                            <div 
+                                className="absolute bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl pointer-events-none z-10 transition-all transform -translate-x-1/2 -translate-y-full border border-gray-700"
+                                style={{
+                                    left: `${(getX(hoveredIndex) / width) * 100}%`,
+                                    top: `${(Math.min(getY(data[hoveredIndex].income), getY(data[hoveredIndex].expense)) / height) * 100 - 10}%`
+                                }}
+                            >
+                                <p className="font-bold border-b border-gray-700 pb-1 mb-1.5 text-gray-200">
+                                    Bulan {data[hoveredIndex].month} {selectedYear}
+                                </p>
+                                <div className="space-y-1">
+                                    <p className="flex justify-between gap-4 text-emerald-400">
+                                        <span>Pemasukan:</span>
+                                        <span className="font-semibold">{formatRupiah(data[hoveredIndex].income)}</span>
+                                    </p>
+                                    <p className="flex justify-between gap-4 text-rose-400">
+                                        <span>Pengeluaran:</span>
+                                        <span className="font-semibold">{formatRupiah(data[hoveredIndex].expense)}</span>
+                                    </p>
+                                    <p className="flex justify-between gap-4 text-blue-300 pt-1 border-t border-gray-800">
+                                        <span>Net Kas:</span>
+                                        <span className="font-bold">{formatRupiah(data[hoveredIndex].income - data[hoveredIndex].expense)}</span>
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </Card>
+            );
+        };
+
+        const DashboardView = ({ user, finances, selectedYear, setSelectedYear, onOpenLiveSync, onOpenImport, onOpenAdd, syncUrl, onSyncNow, isSyncing, lastSyncTime, onClearAll }) => {
+            const isAdmin = user.role === 'admin';
+
+            const activeMonthlyData = useMemo(() => {
+                return computeMonthlyData(finances, selectedYear);
+            }, [finances, selectedYear]);
+            
+            const totalIncome = useMemo(() => activeMonthlyData.reduce((acc, curr) => acc + curr.income, 0), [activeMonthlyData]);
+            const totalExpense = useMemo(() => activeMonthlyData.reduce((acc, curr) => acc + curr.expense, 0), [activeMonthlyData]);
+            const balance = totalIncome - totalExpense;
+
+            return (
+                <div className="space-y-6">
+                    {/* Header Controls */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-800">Dashboard Keuangan</h1>
+                            <p className="text-gray-500 text-xs mt-0.5">
+                                Transparansi kas serikat • {syncUrl ? <span className="text-emerald-700 font-bold">🟢 Live Link Connected</span> : <span className="text-gray-400">Mode Manual/Offline</span>}
+                            </p>
+                        </div>
+
+                        {isAdmin && (
+                            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                                {syncUrl && (
+                                    <Button variant="secondary" icon={<IconRefresh />} onClick={() => onSyncNow()} disabled={isSyncing} className="text-xs">
+                                        {isSyncing ? 'SINKRONISASI...' : 'SINKRONKAN EXCEL'}
+                                    </Button>
+                                )}
+                                <Button variant="excel" icon={<IconLink />} onClick={onOpenLiveSync} className="text-xs">
+                                    {syncUrl ? 'Pengaturan Live Sync' : 'Hubungkan Live Excel'}
+                                </Button>
+                                <Button variant="secondary" icon={<IconPlus />} onClick={onOpenAdd} className="text-xs">
+                                    Tambah Manual
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Status Sync Banner if connected */}
+                    {syncUrl && (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-xs text-emerald-800 flex items-center justify-between">
+                            <span className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Terkoneksi ke Spreadsheet Excel/Google Sheets. {lastSyncTime && <span>Terakhir diperbarui: <b>{lastSyncTime}</b></span>}
+                            </span>
+                            <button onClick={() => onSyncNow()} className="font-bold underline hover:text-emerald-950">Refresh Data Sekarang</button>
+                        </div>
+                    )}
+
+                    {/* Financial Summary Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <Card className="border-l-4 border-blue-500">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="text-xs text-gray-500 font-medium">Net Kas ({selectedYear})</p>
+                                    <h3 className="text-2xl font-bold text-gray-800 mt-1">{formatRupiah(balance)}</h3>
+                                </div>
+                                <div className="p-2.5 bg-blue-50 rounded-lg text-blue-600">
+                                    <IconWallet />
+                                </div>
+                            </div>
+                        </Card>
+                        <Card className="border-l-4 border-emerald-500">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="text-xs text-gray-500 font-medium">Total Pemasukan ({selectedYear})</p>
+                                    <h3 className="text-2xl font-bold text-emerald-700 mt-1">{formatRupiah(totalIncome)}</h3>
+                                </div>
+                                <div className="p-2.5 bg-emerald-50 rounded-lg text-emerald-600">
+                                    <IconTrendingUp />
+                                </div>
+                            </div>
+                        </Card>
+                        <Card className="border-l-4 border-rose-500">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="text-xs text-gray-500 font-medium">Total Pengeluaran ({selectedYear})</p>
+                                    <h3 className="text-2xl font-bold text-rose-700 mt-1">{formatRupiah(totalExpense)}</h3>
+                                </div>
+                                <div className="p-2.5 bg-rose-50 rounded-lg text-rose-600">
+                                    <IconTrendingDown />
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+
+                    {/* Chart Visualization */}
+                    <FinancialLineChart 
+                        data={activeMonthlyData} 
+                        selectedYear={selectedYear} 
+                        onYearChange={setSelectedYear} 
+                    />
+
+                    {/* Table View or Empty State Callout */}
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-lg font-bold text-gray-800">Daftar Transaksi Kas</h2>
+                            {finances.length > 0 && isAdmin && (
+                                <button onClick={onClearAll} className="text-xs text-rose-600 hover:text-rose-800 font-medium flex items-center gap-1">
+                                    <IconTrash /> Hapus Semua Data
+                                </button>
+                            )}
+                        </div>
+
+                        {finances.length === 0 ? (
+                            <Card className="text-center py-12 px-6 border-dashed border-2 border-gray-200">
+                                <div className="w-16 h-16 bg-emerald-50 text-emerald-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <IconFileSpreadsheet />
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-800 mb-1">Belum Ada Data Keuangan</h3>
+                                <p className="text-gray-500 text-xs max-w-md mx-auto mb-6">
+                                    Data keuangan awal telah dikosongkan. Anda dapat menghubungkan link Excel/Google Sheets *Live* atau memasukkan data transaksi baru secara manual.
+                                </p>
+                                {isAdmin && (
+                                    <div className="flex flex-wrap justify-center gap-3">
+                                        <Button variant="excel" icon={<IconLink />} onClick={onOpenLiveSync}>
+                                            Hubungkan Live Link Excel / Google Sheets
+                                        </Button>
+                                        <Button variant="secondary" icon={<IconFileSpreadsheet />} onClick={onOpenImport}>
+                                            Upload File CSV
+                                        </Button>
+                                        <Button variant="primary" icon={<IconPlus />} onClick={onOpenAdd}>
+                                            Input Manual
+                                        </Button>
+                                    </div>
+                                )}
+                            </Card>
+                        ) : (
+                            <Card className="p-0 overflow-hidden">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b">
+                                                <th className="p-4 font-bold">Tanggal</th>
+                                                <th className="p-4 font-bold">Tipe</th>
+                                                <th className="p-4 font-bold">Kategori</th>
+                                                <th className="p-4 font-bold">Deskripsi</th>
+                                                <th className="p-4 font-bold text-right">Nominal</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {finances.map(t => (
+                                                <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                                                    <td className="p-4 text-xs font-medium text-gray-700 whitespace-nowrap">{formatDate(t.date)}</td>
+                                                    <td className="p-4">
+                                                        <span className={`px-2 py-0.5 text-[11px] font-bold rounded ${t.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                            {t.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-4 text-xs font-bold text-gray-800">{t.category}</td>
+                                                    <td className="p-4 text-xs text-gray-600 max-w-[250px] truncate">{t.desc}</td>
+                                                    <td className={`p-4 text-xs font-bold text-right whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        {t.type === 'income' ? '+' : '-'}{formatRupiah(t.amount)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </Card>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const FinanceView = (props) => <DashboardView {...props} />;
+
+        const AgendaView = ({ user }) => {
+            const isAdmin = user.role === 'admin';
+            
+            return (
+                <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <h1 className="text-2xl font-bold text-gray-800">Agenda & Kegiatan Serikat</h1>
+                        {isAdmin && <Button icon={<IconPlus />}>Buat Agenda Baru</Button>}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {MOCK_AGENDA.map(a => (
+                            <Card key={a.id} className="hover:shadow-md transition-shadow border-l-4 border-l-union-500">
+                                <div className="flex justify-between items-start mb-3">
+                                    <h3 className="text-base font-bold text-union-900">{a.title}</h3>
+                                    <StatusBadge status={a.status} />
+                                </div>
+                                <div className="space-y-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2">
+                                        <IconCalendar /> <span>{formatDate(a.date)} • {a.time}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                                        <span>{a.location}</span>
+                                    </div>
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const MembersView = ({ user, members, onOpenAddMember, onToggleStatus }) => {
+            const [searchQuery, setSearchQuery] = useState('');
+            const [filterDept, setFilterDept] = useState('all');
+
+            const filteredMembers = members.filter(m => {
+                const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) || m.id.toLowerCase().includes(searchQuery.toLowerCase());
+                const matchesDept = filterDept === 'all' ? true : m.department === filterDept;
+                return matchesSearch && matchesDept;
+            });
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-800">Manajemen Anggota Serikat</h1>
+                            <p className="text-xs text-gray-500">Kelola daftar seluruh anggota dan hak akses akun</p>
+                        </div>
+                        <Button icon={<IconPlus />} onClick={onOpenAddMember}>
+                            Tambah Anggota
+                        </Button>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                                <IconSearch />
+                            </span>
+                            <input 
+                                type="text"
+                                placeholder="Cari nama atau ID anggota..."
+                                className="w-full pl-10 pr-4 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-union-500 outline-none"
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <select 
+                            className="bg-white border rounded-xl text-xs px-3 py-2 text-gray-700 outline-none focus:ring-2 focus:ring-union-500"
+                            value={filterDept}
+                            onChange={e => setFilterDept(e.target.value)}
+                        >
+                            <option value="all">Semua Departemen</option>
+                            <option value="Produksi">Produksi</option>
+                            <option value="Logistik">Logistik</option>
+                            <option value="Quality Control">Quality Control</option>
+                            <option value="Pengurus Inti">Pengurus Inti</option>
+                        </select>
+                    </div>
+
+                    <Card className="p-0 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50 text-gray-500 text-xs border-b">
+                                        <th className="p-4 font-bold">ID / Nama Anggota</th>
+                                        <th className="p-4 font-bold">Departemen & Jabatan</th>
+                                        <th className="p-4 font-bold">Kontak</th>
+                                        <th className="p-4 font-bold">Role</th>
+                                        <th className="p-4 font-bold">Status</th>
+                                        <th className="p-4 font-bold text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredMembers.map(m => (
+                                        <tr key={m.id} className="border-b last:border-0 hover:bg-gray-50">
+                                            <td className="p-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-union-100 text-union-800 font-bold flex items-center justify-center text-xs">
+                                                        {m.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-gray-800">{m.name}</p>
+                                                        <p className="text-[10px] text-gray-400 font-mono">{m.id}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="p-4">
+                                                <p className="text-xs font-medium text-gray-800">{m.department}</p>
+                                                <p className="text-[11px] text-gray-500">{m.position}</p>
+                                            </td>
+                                            <td className="p-4 text-xs text-gray-600">
+                                                <p>{m.email}</p>
+                                                <p className="text-gray-400">{m.phone}</p>
+                                            </td>
+                                            <td className="p-4">
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${m.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                    {m.role === 'admin' ? 'Pengurus (Admin)' : 'Anggota (User)'}
+                                                </span>
+                                            </td>
+                                            <td className="p-4">
+                                                <StatusBadge status={m.status} />
+                                            </td>
+                                            <td className="p-4 text-center">
+                                                <button 
+                                                    onClick={() => onToggleStatus(m.id)}
+                                                    className={`text-xs font-medium px-2 py-1 rounded ${m.status === 'aktif' ? 'text-rose-600 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                                                >
+                                                    {m.status === 'aktif' ? 'Nonaktifkan' : 'Aktifkan'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+                </div>
+            );
+        };
+
+        const Login = ({ onLogin }) => {
+            const [id, setId] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const user = MOCK_USERS.find(u => u.id === id && u.password === password);
+                if (user) {
+                    onLogin(user);
+                } else {
+                    setError('ID Anggota atau Password salah.');
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+                    <Card className="w-full max-w-md p-8 shadow-lg border-t-4 border-t-union-900">
+                        <div className="text-center mb-8">
+                            <div className="mx-auto bg-union-100 w-16 h-16 rounded-full flex items-center justify-center mb-4">
+                                <IconUsers />
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-900">Serikat Pekerja</h2>
+                            <p className="text-gray-500 text-xs mt-1">Masuk ke sistem informasi anggota</p>
+                        </div>
+
+                        {error && (
+                            <div className="bg-rose-50 text-rose-600 p-3 rounded-lg text-xs mb-4 border border-rose-100">
+                                {error}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">ID Anggota / Username</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-union-500 outline-none text-sm"
+                                    value={id}
+                                    onChange={e => setId(e.target.value)}
+                                    required
+                                    placeholder="admin / user"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-1">Password</label>
+                                <input 
+                                    type="password" 
+                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-union-500 outline-none text-sm"
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    required
+                                    placeholder="********"
+                                />
+                            </div>
+                            <Button className="w-full py-2.5 text-sm" type="submit">Masuk</Button>
+                        </form>
+                        
+                        <div className="mt-6 text-center text-xs text-gray-400">
+                            Gunakan <b>admin/admin</b> atau <b>user/user</b> untuk demo.
+                        </div>
+                    </Card>
+                </div>
+            );
+        };
+
+        const MainLayout = ({ user, onLogout }) => {
+            const [currentView, setCurrentView] = useState('dashboard');
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+            const [selectedYear, setSelectedYear] = useState('2026');
+
+            // Persistent Finances & Live Sync Link
+            const [finances, setFinances] = useState([]);
+const [isLoading, setIsLoading] = useState(true);
+
+// URL Backend (Nanti diganti jika sudah di-deploy)
+const BACKEND_URL = 'https://serikat-backend.onrender.com/api/finances';
+
+// Fungsi mengambil data dari Server
+const fetchFinances = async () => {
+    try {
+        const response = await fetch(BACKEND_URL);
+        const data = await response.json();
+        setFinances(data);
+    } catch (error) {
+        console.error("Gagal mengambil data dari server", error);
+    } finally {
+        setIsLoading(false);
+    }
+};
+
+// Panggil saat aplikasi pertama kali dimuat
+useEffect(() => {
+    fetchFinances();
+}, []);
+
+            const [syncUrl, setSyncUrl] = useState(() => localStorage.getItem('sp_sync_url') || '');
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [lastSyncTime, setLastSyncTime] = useState(() => localStorage.getItem('sp_last_sync') || '');
+
+            const [members, setMembers] = useState(MOCK_USERS);
+
+            // Modals
+            const [isLiveSyncModalOpen, setIsLiveSyncModalOpen] = useState(false);
+            const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+            const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+            const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
+
+            // Save finances to local storage whenever updated
+            useEffect(() => {
+                localStorage.setItem('sp_finances', JSON.stringify(finances));
+            }, [finances]);
+
+            // Save Sync URL
+            const handleSaveSyncUrl = (url) => {
+                setSyncUrl(url);
+                localStorage.setItem('sp_sync_url', url);
+            };
+
+            // Fetch Live CSV function
+            const handleSyncNow = useCallback(async (targetUrl = syncUrl) => {
+                if (!targetUrl) return false;
+                setIsSyncing(true);
+                try {
+                    const res = await fetch(targetUrl);
+                    if (!res.ok) throw new Error('HTTP Error');
+                    const text = await res.text();
+                    const parsed = parseCSVToFinances(text);
+                    if (parsed.length >= 0) {
+                        setFinances(parsed);
+                        const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                        setLastSyncTime(now);
+                        localStorage.setItem('sp_last_sync', now);
+                        setIsSyncing(false);
+                        return true;
+                    }
+                } catch (err) {
+                    console.error('Failed to sync live csv:', err);
+                }
+                setIsSyncing(false);
+                return false;
+            }, [syncUrl]);
+
+            // Auto sync on load if link exists
+            useEffect(() => {
+                if (syncUrl) {
+                    handleSyncNow(syncUrl);
+                }
+            }, []);
+
+            const handleClearAll = () => {
+                setFinances([]);
+                localStorage.removeItem('sp_finances');
+            };
+
+            const handleImportFinances = (newTransactions) => {
+                setFinances(prev => [...newTransactions, ...prev]);
+            };
+
+            const handleAddSingleFinance = async (item) => {
+    try {
+        // Kirim data ke server
+        const response = await fetch(BACKEND_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item)
+        });
+        
+        if (response.ok) {
+            const savedItem = await response.json();
+            // Update tampilan di layar
+            setFinances(prev => [savedItem, ...prev]); 
+        }
+    } catch (error) {
+        console.error("Gagal menyimpan data ke server", error);
+        alert("Gagal menyimpan transaksi!");
+    }
+};
+
+            const handleAddMember = (newMember) => {
+                setMembers(prev => [newMember, ...prev]);
+            };
+
+            const handleToggleMemberStatus = (memberId) => {
+                setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: m.status === 'aktif' ? 'nonaktif' : 'aktif' } : m));
+            };
+
+            const NAV_ITEMS = [
+                { id: 'dashboard', label: 'Dashboard Keuangan', icon: <IconHome />, roles: ['admin', 'user'] },
+                { id: 'agenda', label: 'Agenda', icon: <IconCalendar />, roles: ['admin', 'user'] },
+                { id: 'members', label: 'Anggota', icon: <IconUsers />, roles: ['admin'] },
+            ];
+
+            const allowedNavItems = NAV_ITEMS.filter(item => item.roles.includes(user.role));
+            const currentItem = NAV_ITEMS.find(i => i.id === currentView) || NAV_ITEMS[0];
+
+            return (
+                <div className="flex h-screen overflow-hidden bg-gray-50 relative">
+                    
+                    {/* BACKDROP */}
+                    {isSidebarOpen && (
+                        <div 
+                            className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-40 transition-opacity duration-300"
+                            onClick={() => setIsSidebarOpen(false)}
+                        />
+                    )}
+
+                    {/* SIDEBAR */}
+                    <aside className={`fixed top-0 left-0 bottom-0 w-72 bg-union-900 text-white shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                        <div className="flex items-center justify-between h-20 px-6 border-b border-union-800">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-union-500 flex items-center justify-center font-bold text-white text-sm">SP</div>
+                                <h1 className="text-lg font-bold tracking-wider">SERIKAT APP</h1>
+                            </div>
+                            <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 rounded-lg text-union-300 hover:text-white">
+                                <IconX />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto py-4 px-4 space-y-1 hide-scroll">
+                            <p className="text-[11px] font-semibold text-union-300 uppercase tracking-wider px-3 mb-2">Menu Navigasi</p>
+                            {allowedNavItems.map(item => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => {
+                                        setCurrentView(item.id);
+                                        setIsSidebarOpen(false);
+                                    }}
+                                    className={`w-full flex items-center gap-3.5 px-4 py-3 text-sm font-medium rounded-xl transition-all ${currentView === item.id ? 'bg-union-800 text-white shadow-md' : 'text-union-100 hover:bg-union-800/60 hover:text-white'}`}
+                                >
+                                    {item.icon}
+                                    <span>{item.label}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="p-4 border-t border-union-800 bg-union-950/40">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="w-9 h-9 rounded-full bg-union-700 flex items-center justify-center font-bold text-white text-xs">
+                                    {user.name.charAt(0)}
+                                </div>
+                                <div className="overflow-hidden">
+                                    <p className="text-xs font-bold truncate text-white">{user.name}</p>
+                                    <p className="text-[10px] text-union-300 capitalize">{user.role}</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={onLogout} 
+                                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-rose-200 bg-rose-500/20 hover:bg-rose-500/30 rounded-lg transition-colors"
+                            >
+                                <IconLogOut /> Keluar
+                            </button>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONTENT */}
+                    <div className="flex-1 flex flex-col relative w-full overflow-hidden">
+                        
+                        <header className="h-20 bg-white shadow-sm border-b border-gray-100 flex items-center justify-between px-4 sm:px-8 z-30">
+                            <div className="flex items-center gap-3 sm:gap-4">
+                                <button 
+                                    onClick={() => setIsSidebarOpen(true)} 
+                                    className="flex items-center gap-2 bg-union-50 hover:bg-union-100 text-union-900 border border-union-200 px-3 py-2 rounded-xl text-xs font-bold transition-all"
+                                >
+                                    <IconMenu />
+                                    <span className="hidden sm:inline">Menu</span>
+                                </button>
+
+                                <div className="flex items-center gap-2 pl-2 border-l border-gray-200">
+                                    <span className="text-gray-900 font-bold text-base flex items-center gap-2">
+                                        {currentItem?.icon}
+                                        {currentItem?.label}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <div className="hidden sm:flex items-center gap-3 pl-3">
+                                    <div className="w-8 h-8 rounded-full bg-union-900 text-white font-bold flex items-center justify-center text-xs">
+                                        {user.name.charAt(0)}
+                                    </div>
+                                    <div className="text-left leading-tight hidden lg:block">
+                                        <p className="text-xs font-bold text-gray-800">{user.name}</p>
+                                        <p className="text-[10px] text-gray-500 capitalize">{user.role}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </header>
+
+                        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-8">
+                            <div className="max-w-6xl mx-auto">
+                                {currentView === 'dashboard' && (
+                                    <DashboardView 
+                                        user={user} 
+                                        finances={finances} 
+                                        selectedYear={selectedYear} 
+                                        setSelectedYear={setSelectedYear} 
+                                        onOpenLiveSync={() => setIsLiveSyncModalOpen(true)}
+                                        onOpenImport={() => setIsImportModalOpen(true)} 
+                                        onOpenAdd={() => setIsAddModalOpen(true)}
+                                        syncUrl={syncUrl}
+                                        onSyncNow={handleSyncNow}
+                                        isSyncing={isSyncing}
+                                        lastSyncTime={lastSyncTime}
+                                        onClearAll={handleClearAll}
+                                    />
+                                )}
+                                {currentView === 'agenda' && <AgendaView user={user} />}
+                                {currentView === 'members' && (
+                                    <MembersView 
+                                        user={user} 
+                                        members={members} 
+                                        onOpenAddMember={() => setIsAddMemberModalOpen(true)} 
+                                        onToggleStatus={handleToggleMemberStatus} 
+                                    />
+                                )}
+                            </div>
+                        </main>
+                    </div>
+
+                    {/* MODALS */}
+                    <LiveExcelModal 
+                        isOpen={isLiveSyncModalOpen}
+                        onClose={() => setIsLiveSyncModalOpen(false)}
+                        syncUrl={syncUrl}
+                        onSaveSyncUrl={handleSaveSyncUrl}
+                        onSyncNow={handleSyncNow}
+                        isSyncing={isSyncing}
+                    />
+
+                    <ExcelImportModal 
+                        isOpen={isImportModalOpen} 
+                        onClose={() => setIsImportModalOpen(false)} 
+                        onImport={handleImportFinances} 
+                    />
+
+                    <ManualAddModal 
+                        isOpen={isAddModalOpen}
+                        onClose={() => setIsAddModalOpen(false)}
+                        onAdd={handleAddSingleFinance}
+                    />
+
+                    <AddMemberModal 
+                        isOpen={isAddMemberModalOpen} 
+                        onClose={() => setIsAddMemberModalOpen(false)} 
+                        onAddMember={handleAddMember} 
+                    />
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+
+            useEffect(() => {
+                const storedUser = localStorage.getItem('sp_user');
+                if (storedUser) {
+                    try { setUser(JSON.parse(storedUser)); } catch (e) {}
+                }
+            }, []);
+
+            const handleLogin = (userData) => {
+                setUser(userData);
+                localStorage.setItem('sp_user', JSON.stringify(userData));
+            };
+
+            const handleLogout = () => {
+                setUser(null);
+                localStorage.removeItem('sp_user');
+            };
+
+            if (!user) {
+                return <Login onLogin={handleLogin} />;
+            }
+
+            return <MainLayout user={user} onLogout={handleLogout} />;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
