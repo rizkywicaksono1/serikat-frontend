@@ -1057,6 +1057,19 @@
         const MembersView = ({ user, members, onOpenAddMember, onToggleStatus }) => {
             const [searchQuery, setSearchQuery] = useState('');
             const [filterDept, setFilterDept] = useState('all');
+            const [members, setMembers] = useState([]);
+
+const fetchMembers = async () => {
+    try {
+        const res = await fetch(API_BASE + '/members');
+        const data = await res.json();
+        setMembers(data);
+    } catch (err) {
+        console.error('Gagal ambil anggota', err);
+    }
+};
+
+useEffect(() => { fetchMembers(); }, []);
 
             const filteredMembers = members.filter(m => {
                 const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) || m.id.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1368,13 +1381,30 @@ useEffect(() => {
     }
 };
 
-            const handleAddMember = (newMember) => {
-                setMembers(prev => [newMember, ...prev]);
-            };
+           const handleAddMember = async (newMember) => {
+    try {
+        const res = await fetch(API_BASE + '/members', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newMember)
+        });
+        const saved = await res.json();
+        if (res.ok) setMembers(prev => [saved, ...prev]);
+        else alert(saved.error);
+    } catch (err) {
+        alert('Gagal menambah anggota');
+    }
+};
 
-            const handleToggleMemberStatus = (memberId) => {
-                setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: m.status === 'aktif' ? 'nonaktif' : 'aktif' } : m));
-            };
+           const handleToggleMemberStatus = async (memberId) => {
+    try {
+        const res = await fetch(API_BASE + `/members/${memberId}/toggle-status`, { method: 'PATCH' });
+        const updated = await res.json();
+        setMembers(prev => prev.map(m => m.id === memberId ? updated : m));
+    } catch (err) {
+        alert('Gagal mengubah status');
+    }
+};
 
             const NAV_ITEMS = [
                 { id: 'dashboard', label: 'Dashboard Keuangan', icon: <IconHome />, roles: ['admin', 'user'] },
