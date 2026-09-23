@@ -1163,20 +1163,34 @@
             );
         };
 
-        const Login = ({ onLogin }) => {
-            const [id, setId] = useState('');
-            const [password, setPassword] = useState('');
-            const [error, setError] = useState('');
+       const Login = ({ onLogin }) => {
+    const [id, setId] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
 
-            const handleSubmit = (e) => {
-                e.preventDefault();
-                const user = MOCK_USERS.find(u => u.id === id && u.password === password);
-                if (user) {
-                    onLogin(user);
-                } else {
-                    setError('ID Anggota atau Password salah.');
-                }
-            };
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        setIsLoading(true);
+        try {
+            const res = await fetch(BACKEND_URL.replace('/finances', '') + '/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, password })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setError(data.error || 'Login gagal');
+            } else {
+                onLogin(data);
+            }
+        } catch (err) {
+            setError('Tidak bisa terhubung ke server');
+        }
+        setIsLoading(false);
+    };
+
 
             return (
                 <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
