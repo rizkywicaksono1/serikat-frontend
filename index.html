@@ -1277,35 +1277,47 @@ useEffect(() => {
             }, [finances]);
 
             // Save Sync URL
-            const handleSaveSyncUrl = (url) => {
-                setSyncUrl(url);
-                localStorage.setItem('sp_sync_url', url);
-            };
-
+          const handleSaveSyncUrl = async (url) => {
+    setSyncUrl(url);
+    localStorage.setItem('sp_sync_url', url);
+    await fetch(BACKEND_URL.replace('/finances', '') + '/settings/sync-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ syncUrl: url })
+    });
+};
             // Fetch Live CSV function
-            const handleSyncNow = useCallback(async (targetUrl = syncUrl) => {
-                if (!targetUrl) return false;
-                setIsSyncing(true);
-                try {
-                    const res = await fetch(targetUrl);
-                    if (!res.ok) throw new Error('HTTP Error');
-                    const text = await res.text();
-                    const parsed = parseCSVToFinances(text);
-                    if (parsed.length >= 0) {
-                        setFinances(parsed);
-                        const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-                        setLastSyncTime(now);
-                        localStorage.setItem('sp_last_sync', now);
-                        setIsSyncing(false);
-                        return true;
-                    }
-                } catch (err) {
-                    console.error('Failed to sync live csv:', err);
-                }
-                setIsSyncing(false);
-                return false;
-            }, [syncUrl]);
+           const handleSyncNow = useCallback(async (targetUrl = syncUrl) => {
+    if (!targetUrl) return false;
+    setIsSyncing(true);
+    try {
+        const res = await fetch(targetUrl);
+        if (!res.ok) throw new Error('HTTP Error');
+        const text = await res.text();
+        const parsed = parseCSVToFinances(text);
 
+        // Kirim ke backend supaya tersimpan di MongoDB, bukan cuma state lokal
+        const syncRes = await fetch(BACKEND_URL + '/bulk-replace', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(parsed)
+        });
+
+        if (!syncRes.ok) throw new Error('Gagal simpan ke server');
+        const savedData = await syncRes.json();
+
+        setFinances(savedData); // pakai data yang sudah tersimpan (ada _id dari MongoDB)
+        const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(now);
+        localStorage.setItem('sp_last_sync', now);
+        setIsSyncing(false);
+        return true;
+    } catch (err) {
+        console.error('Failed to sync live csv:', err);
+    }
+    setIsSyncing(false);
+    return false;
+}, [syncUrl]);
             // Auto sync on load if link exists
             useEffect(() => {
                 if (syncUrl) {
