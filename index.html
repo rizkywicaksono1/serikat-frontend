@@ -1293,11 +1293,6 @@ useEffect(() => {
                     const parsed = parseCSVToFinances(text);
                     if (parsed.length >= 0) {
                         setFinances(parsed);
-                        await fetch(https://serikat-backend.onrender.com + '/bulk-replace', { // buat endpoint baru di server.js
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(parsed)
-});
                         const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
                         setLastSyncTime(now);
                         localStorage.setItem('sp_last_sync', now);
