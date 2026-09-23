@@ -1057,17 +1057,16 @@
         const MembersView = ({ user, members, onOpenAddMember, onToggleStatus }) => {
             const [searchQuery, setSearchQuery] = useState('');
             const [filterDept, setFilterDept] = useState('all');
-            const [members, setMembers] = useState([]);
 
-const fetchMembers = async () => {
-    try {
-        const res = await fetch(API_BASE + '/members');
-        const data = await res.json();
-        setMembers(data);
-    } catch (err) {
-        console.error('Gagal ambil anggota', err);
-    }
-};
+//const fetchMembers = async () => {
+  //  try {
+    //    const res = await fetch(API_BASE + '/members');
+      //  const data = await res.json();
+        //setMembers(data);
+    //} catch (err) {
+      //  console.error('Gagal ambil anggota', err);
+    //}
+//};
 
 useEffect(() => { fetchMembers(); }, []);
 
@@ -1290,7 +1289,19 @@ useEffect(() => {
             const [isSyncing, setIsSyncing] = useState(false);
             const [lastSyncTime, setLastSyncTime] = useState(() => localStorage.getItem('sp_last_sync') || '');
 
-            const [members, setMembers] = useState(MOCK_USERS);
+          const [members, setMembers] = useState([]);
+
+const fetchMembers = async () => {
+    try {
+        const res = await fetch(API_BASE + '/members');
+        const data = await res.json();
+        setMembers(data);
+    } catch (err) {
+        console.error('Gagal ambil anggota', err);
+    }
+};
+
+useEffect(() => { fetchMembers(); }, []);
 
             // Modals
             const [isLiveSyncModalOpen, setIsLiveSyncModalOpen] = useState(false);
