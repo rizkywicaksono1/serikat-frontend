@@ -986,35 +986,95 @@
                             </Card>
                         ) : (
                             <Card className="p-0 overflow-hidden">
+                                {isAdmin && selectedIds.length > 0 && (
+    <div className="flex items-center justify-between bg-rose-50 border border-rose-200 px-4 py-2.5 rounded-xl mb-4 text-xs text-rose-800">
+        <span><strong>{selectedIds.length}</strong> transaksi terpilih</span>
+        <div className="flex gap-2">
+            <button 
+                type="button" 
+                onClick={() => setSelectedIds([])}
+                className="px-3 py-1 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+            >
+                Batal
+            </button>
+            <button 
+                type="button" 
+                onClick={async () => {
+                    await onBulkDeleteFinances(selectedIds);
+                    setSelectedIds([]);
+                }}
+                className="px-3 py-1 bg-rose-600 text-white font-bold rounded-lg hover:bg-rose-700"
+            >
+                Hapus Terpilih ({selectedIds.length})
+            </button>
+        </div>
+    </div>
+)}
+
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b">
-                                                <th className="p-4 font-bold">Tanggal</th>
-                                                <th className="p-4 font-bold">Tipe</th>
-                                                <th className="p-4 font-bold">Kategori</th>
-                                                <th className="p-4 font-bold">Deskripsi</th>
-                                                <th className="p-4 font-bold text-right">Nominal</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {finances.map(t => (
-                                                <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
-                                                    <td className="p-4 text-xs font-medium text-gray-700 whitespace-nowrap">{formatDate(t.date)}</td>
-                                                    <td className="p-4">
-                                                        <span className={`px-2 py-0.5 text-[11px] font-bold rounded ${t.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                                            {t.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-4 text-xs font-bold text-gray-800">{t.category}</td>
-                                                    <td className="p-4 text-xs text-gray-600 max-w-[250px] truncate">{t.desc}</td>
-                                                    <td className={`p-4 text-xs font-bold text-right whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                        {t.type === 'income' ? '+' : '-'}{formatRupiah(t.amount)}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+    <thead>
+        <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b">
+            {isAdmin && (
+                <th className="p-4 w-10 text-center">
+                    <input 
+                        type="checkbox" 
+                        checked={finances.length > 0 && selectedIds.length === finances.length}
+                        onChange={toggleSelectAll}
+                        className="rounded cursor-pointer"
+                    />
+                </th>
+            )}
+            <th className="p-4 font-bold">Tanggal</th>
+            <th className="p-4 font-bold">Tipe</th>
+            <th className="p-4 font-bold">Kategori</th>
+            <th className="p-4 font-bold">Deskripsi</th>
+            <th className="p-4 font-bold text-right">Nominal</th>
+            {isAdmin && <th className="p-4 font-bold text-center w-16">Aksi</th>}
+        </tr>
+    </thead>
+    <tbody>
+        {finances.map(t => (
+            <tr key={t.id} className={`border-b last:border-0 hover:bg-gray-50 transition-colors ${selectedIds.includes(t.id) ? 'bg-rose-50/40' : ''}`}>
+                {isAdmin && (
+                    <td className="p-4 text-center">
+                        <input 
+                            type="checkbox" 
+                            checked={selectedIds.includes(t.id)}
+                            onChange={() => toggleSelect(t.id)}
+                            className="rounded cursor-pointer"
+                        />
+                    </td>
+                )}
+                <td className="p-4 text-xs font-medium text-gray-700 whitespace-nowrap">{formatDate(t.date)}</td>
+                <td className="p-4">
+                    <span className={`px-2 py-0.5 text-[11px] font-bold rounded ${t.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                        {t.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}
+                    </span>
+                </td>
+                <td className="p-4 text-xs font-bold text-gray-800">{t.category}</td>
+                <td className="p-4 text-xs text-gray-600 max-w-[250px] truncate">{t.desc}</td>
+                <td className={`p-4 text-xs font-bold text-right whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {t.type === 'income' ? '+' : '-'}{formatRupiah(t.amount)}
+                </td>
+                {isAdmin && (
+                    <td className="p-4 text-center">
+                        <button
+                            type="button"
+                            title="Hapus transaksi ini"
+                            onClick={() => onDeleteFinance(t.id)}
+                            className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                            </svg>
+                        </button>
+                    </td>
+                )}
+            </tr>
+        ))}
+    </tbody>
+</table>
                                 </div>
                             </Card>
                         )}
@@ -1355,7 +1415,41 @@ useEffect(() => { fetchMembers(); }, []);
                     handleSyncNow(syncUrl);
                 }
             }, []);
+const handleDeleteFinance = async (id) => {
+    if (!window.confirm('Apakah Anda yakin ingin menghapus transaksi ini?')) return;
+    try {
+        const res = await fetch(`${API_BASE}/finances/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            setFinances(prev => prev.filter(item => item.id !== id));
+        } else {
+            alert('Gagal menghapus data di database.');
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Gagal terhubung ke server.');
+    }
+};
 
+const handleBulkDeleteFinances = async (ids) => {
+    if (!ids || ids.length === 0) return;
+    if (!window.confirm(`Yakin ingin menghapus ${ids.length} transaksi yang dipilih?`)) return;
+    try {
+        const res = await fetch(`${API_BASE}/finances/bulk-delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        if (res.ok) {
+            const idSet = new Set(ids);
+            setFinances(prev => prev.filter(item => !idSet.has(item.id)));
+        } else {
+            alert('Gagal menghapus data massal di database.');
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Gagal terhubung ke server.');
+    }
+};
           const handleClearAll = async () => {
     if (!confirm('Apakah Anda yakin ingin menghapus semua data keuangan dari database?')) return;
     
@@ -1528,19 +1622,57 @@ useEffect(() => { fetchMembers(); }, []);
                             <div className="max-w-6xl mx-auto">
                                 {currentView === 'dashboard' && (
                                     <DashboardView 
-                                        user={user} 
-                                        finances={finances} 
-                                        selectedYear={selectedYear} 
-                                        setSelectedYear={setSelectedYear} 
-                                        onOpenLiveSync={() => setIsLiveSyncModalOpen(true)}
-                                        onOpenImport={() => setIsImportModalOpen(true)} 
-                                        onOpenAdd={() => setIsAddModalOpen(true)}
-                                        syncUrl={syncUrl}
-                                        onSyncNow={handleSyncNow}
-                                        isSyncing={isSyncing}
-                                        lastSyncTime={lastSyncTime}
-                                        onClearAll={handleClearAll}
-                                    />
+    user={user} 
+    finances={finances} 
+    selectedYear={selectedYear} 
+    setSelectedYear={setSelectedYear} 
+    onOpenLiveSync={() => setIsLiveSyncOpen(true)}
+    onOpenImport={() => setIsImportOpen(true)}
+    onOpenAdd={() => setIsAddOpen(true)}
+    syncUrl={syncUrl}
+    onSyncNow={handleSyncNow}
+    isSyncing={isSyncing}
+    lastSyncTime={lastSyncTime}
+    onClearAll={handleClearAll}
+    onDeleteFinance={handleDeleteFinance}
+    onBulkDeleteFinances={handleBulkDeleteFinances}
+                                        const DashboardView = ({ 
+    user, 
+    finances, 
+    selectedYear, 
+    setSelectedYear, 
+    onOpenLiveSync, 
+    onOpenImport, 
+    onOpenAdd, 
+    syncUrl, 
+    onSyncNow, 
+    isSyncing, 
+    lastSyncTime, 
+    onClearAll,
+    onDeleteFinance,
+    onBulkDeleteFinances 
+}) => {
+    const isAdmin = user.role === 'admin';
+    const [selectedIds, setSelectedIds] = useState([]);
+
+    // Fungsi toggle checklist satuan
+    const toggleSelect = (id) => {
+        setSelectedIds(prev => 
+            prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+        );
+    };
+
+    // Fungsi pilih semua / batalkan semua
+    const toggleSelectAll = () => {
+        if (selectedIds.length === finances.length) {
+            setSelectedIds([]);
+        } else {
+            setSelectedIds(finances.map(f => f.id));
+        }
+    };
+
+/>
+
                                 )}
                                 {currentView === 'agenda' && <AgendaView user={user} />}
                                 {currentView === 'members' && (
