@@ -1058,9 +1058,24 @@
             );
         };
 
-        const MembersView = ({ user, members, onOpenAddMember, onToggleStatus }) => {
+             const MembersView = ({ user, members, onOpenAddMember, onToggleStatus }) => {
             const [searchQuery, setSearchQuery] = useState('');
             const [filterDept, setFilterDept] = useState('all');
+
+            // Hapus komentar fetchMembers dan baris useEffect(() => { fetchMembers(); }, []);
+            // Data anggota sudah otomatis diambil oleh MainLayout
+
+            const safeMembers = Array.isArray(members) ? members : [];
+            const filteredMembers = safeMembers.filter(m => {
+                const matchesSearch = (m.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                      (m.id || '').toLowerCase().includes(searchQuery.toLowerCase());
+                const matchesDept = filterDept === 'all' ? true : m.department === filterDept;
+                return matchesSearch && matchesDept;
+            });
+
+            return (
+                <div className="space-y-6">
+
 
 //const fetchMembers = async () => {
   //  try {
