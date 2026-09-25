@@ -1356,11 +1356,23 @@ useEffect(() => { fetchMembers(); }, []);
                 }
             }, []);
 
-            const handleClearAll = () => {
-                setFinances([]);
-                localStorage.removeItem('sp_finances');
-            };
-
+          const handleClearAll = async () => {
+    if (!confirm('Apakah Anda yakin ingin menghapus semua data keuangan dari database?')) return;
+    
+    try {
+        const res = await fetch(BACKEND_URL, { method: 'DELETE' });
+        if (res.ok) {
+            setFinances([]);
+            localStorage.removeItem('sp_finances');
+            alert('Semua data keuangan di database berhasil dihapus');
+        } else {
+            alert('Gagal menghapus data di database');
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Gagal terhubung ke server');
+    }
+};
             const handleImportFinances = (newTransactions) => {
                 setFinances(prev => [...newTransactions, ...prev]);
             };
