@@ -1265,7 +1265,7 @@ useEffect(() => { fetchMembers(); }, []);
 const [isLoading, setIsLoading] = useState(true);
 
 // URL Backend (Nanti diganti jika sudah di-deploy)
-cconst API_BASE = 'https://serikat-backend.onrender.com/api';
+const API_BASE = 'https://serikat-backend.onrender.com/api';
 const BACKEND_URL = `${API_BASE}/finances`;
 // Fungsi mengambil data dari Server
 const fetchFinances = async () => {
