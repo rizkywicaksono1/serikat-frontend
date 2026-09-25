@@ -59,7 +59,11 @@
             { id: 'user', password: 'user', name: 'Rizky Pratama', role: 'user', department: 'Produksi', position: 'Anggota', phone: '089876543210', email: 'rizky@serikat.org', status: 'aktif' },
             { id: 'SP-003', password: 'user', name: 'Siti Aminah', role: 'user', department: 'Logistik', position: 'Anggota', phone: '081122334455', email: 'siti@serikat.org', status: 'aktif' }
         ];
-
+        
+ // TARUH DI SINI (Variabel Global):
+    const API_BASE = 'https://serikat-backend.onrender.com/api';
+    const BACKEND_URL = `${API_BASE}/finances`;
+        
         // INITIAL FINANCES NOW EMPTY AS REQUESTED
         const INITIAL_FINANCES = [];
 
@@ -1186,11 +1190,11 @@ useEffect(() => { fetchMembers(); }, []);
         setError('');
         setIsLoading(true);
         try {
-            const res = await fetch(BACKEND_URL.replace('/finances', '') + '/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, password })
-            });
+          const res = await fetch(`${API_BASE}/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, password })
+});
             const data = await res.json();
             if (!res.ok) {
                 setError(data.error || 'Login gagal');
@@ -1263,10 +1267,6 @@ useEffect(() => { fetchMembers(); }, []);
             // Persistent Finances & Live Sync Link
             const [finances, setFinances] = useState([]);
 const [isLoading, setIsLoading] = useState(true);
-
-// URL Backend (Nanti diganti jika sudah di-deploy)
-const API_BASE = 'https://serikat-backend.onrender.com/api';
-const BACKEND_URL = `${API_BASE}/finances`;
 // Fungsi mengambil data dari Server
 const fetchFinances = async () => {
     try {
