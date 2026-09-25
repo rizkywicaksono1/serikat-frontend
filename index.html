@@ -856,8 +856,41 @@
             );
         };
 
-        const DashboardView = ({ user, finances, selectedYear, setSelectedYear, onOpenLiveSync, onOpenImport, onOpenAdd, syncUrl, onSyncNow, isSyncing, lastSyncTime, onClearAll }) => {
-            const isAdmin = user.role === 'admin';
+         const DashboardView = ({ 
+    user, 
+    finances, 
+    selectedYear, 
+    setSelectedYear, 
+    onOpenLiveSync, 
+    onOpenImport, 
+    onOpenAdd, 
+    syncUrl, 
+    onSyncNow, 
+    isSyncing, 
+    lastSyncTime, 
+    onClearAll,
+    onDeleteFinance,
+    onBulkDeleteFinances 
+}) => {
+    const isAdmin = user.role === 'admin';
+    const [selectedIds, setSelectedIds] = useState([]);
+
+    // Fungsi toggle checklist satuan
+    const toggleSelect = (id) => {
+        setSelectedIds(prev => 
+            prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+        );
+    };
+
+    // Fungsi pilih semua / batalkan semua
+    const toggleSelectAll = () => {
+        if (selectedIds.length === finances.length) {
+            setSelectedIds([]);
+        } else {
+            setSelectedIds(finances.map(f => f.id));
+        }
+    };
+
 
             const activeMonthlyData = useMemo(() => {
                 return computeMonthlyData(finances, selectedYear);
@@ -1636,41 +1669,6 @@ const handleBulkDeleteFinances = async (ids) => {
     onClearAll={handleClearAll}
     onDeleteFinance={handleDeleteFinance}
     onBulkDeleteFinances={handleBulkDeleteFinances}
-                                        const DashboardView = ({ 
-    user, 
-    finances, 
-    selectedYear, 
-    setSelectedYear, 
-    onOpenLiveSync, 
-    onOpenImport, 
-    onOpenAdd, 
-    syncUrl, 
-    onSyncNow, 
-    isSyncing, 
-    lastSyncTime, 
-    onClearAll,
-    onDeleteFinance,
-    onBulkDeleteFinances 
-}) => {
-    const isAdmin = user.role === 'admin';
-    const [selectedIds, setSelectedIds] = useState([]);
-
-    // Fungsi toggle checklist satuan
-    const toggleSelect = (id) => {
-        setSelectedIds(prev => 
-            prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-        );
-    };
-
-    // Fungsi pilih semua / batalkan semua
-    const toggleSelectAll = () => {
-        if (selectedIds.length === finances.length) {
-            setSelectedIds([]);
-        } else {
-            setSelectedIds(finances.map(f => f.id));
-        }
-    };
-
 />
 
                                 )}
