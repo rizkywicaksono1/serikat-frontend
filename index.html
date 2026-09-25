@@ -1076,25 +1076,6 @@
             return (
                 <div className="space-y-6">
 
-
-//const fetchMembers = async () => {
-  //  try {
-    //    const res = await fetch(API_BASE + '/members');
-      //  const data = await res.json();
-        //setMembers(data);
-    //} catch (err) {
-      //  console.error('Gagal ambil anggota', err);
-    //}
-//};
-
-useEffect(() => { fetchMembers(); }, []);
-
-            const filteredMembers = members.filter(m => {
-                const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) || m.id.toLowerCase().includes(searchQuery.toLowerCase());
-                const matchesDept = filterDept === 'all' ? true : m.department === filterDept;
-                return matchesSearch && matchesDept;
-            });
-
             return (
                 <div className="space-y-6">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
